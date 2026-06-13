@@ -20,7 +20,7 @@ export default function FinalReport({
   const report = playerReport ?? (dna ? fallbackReport(dna) : null);
   const activeDna = report?.dna_after ?? dna;
 
-  if (!activeDna || !report) {
+  if (!activeDna && !report && !coachResult) {
     return (
       <main className="report-screen empty-report">
         <h1>FOOTBALLVERSE AI</h1>
@@ -32,16 +32,16 @@ export default function FinalReport({
     );
   }
 
-  const coachRating = coachResult?.tactical_rating ?? 0;
-  const playerRating = report.shareable_card.rating;
-  const overall = coachRating ? Math.round((playerRating + coachRating) / 2) : playerRating;
-  const shareText = [
+  const coachRating = coachResult?.total_points ? Math.min(99, Math.floor(coachResult.total_points / 2)) : 0;
+  const playerRating = report?.shareable_card.rating ?? 0;
+  const overall = coachRating && playerRating ? Math.round((playerRating + coachRating) / 2) : (coachRating || playerRating);
+  const shareText = report ? [
     report.shareable_card.title,
     report.shareable_card.headline,
     `Score: ${report.score}`,
     `Accuracy: ${report.accuracy}%`,
     `Suggested Role: ${report.suggested_role}`,
-  ].join('\n');
+  ].join('\n') : `Coach Mode Score: ${coachResult?.total_points} Pts`;
 
   const handleShare = async () => {
     try {
@@ -70,72 +70,76 @@ export default function FinalReport({
       </header>
 
       <section className="report-grid">
-        <article className="ultimate-card">
-          <div className="card-rating">{overall}</div>
-          <div className="card-name">{activeDna.name_match ?? activeDna.primary_match}</div>
-          <div className="card-role">{activeDna.style ?? activeDna.archetype}</div>
-          <div className="card-stats">
-            {Object.entries(activeDna.traits ?? {}).map(([label, value]) => (
-              <div key={label}>
-                <strong>{value}</strong>
-                <span>{label.slice(0, 3).toUpperCase()}</span>
+        {activeDna && report && (
+          <>
+            <article className="ultimate-card">
+              <div className="card-rating">{overall}</div>
+              <div className="card-name">{activeDna.name_match ?? activeDna.primary_match}</div>
+              <div className="card-role">{activeDna.style ?? activeDna.archetype}</div>
+              <div className="card-stats">
+                {Object.entries(activeDna.traits ?? {}).map(([label, value]) => (
+                  <div key={label}>
+                    <strong>{value}</strong>
+                    <span>{label.slice(0, 3).toUpperCase()}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </article>
+            </article>
 
-        <article className="report-summary">
-          <h3>{report.evolution}</h3>
-          <div className="summary-metrics">
-            <div><span>Goals</span><strong>{report.score}</strong></div>
-            <div><span>Accuracy</span><strong>{report.accuracy}%</strong></div>
-            <div><span>Reaction</span><strong>{report.reaction_time}s</strong></div>
-            <div><span>Role</span><strong>{report.suggested_role}</strong></div>
-          </div>
-          <p>{report.match_story}</p>
-          <div className="insight-row">
-            <div>
-              <span>Best Skill</span>
-              <strong>{report.best_skill}</strong>
-            </div>
-            <div>
-              <span>Weakness</span>
-              <strong>{report.weakness}</strong>
-            </div>
-          </div>
-        </article>
-
-        <article className="chart-panel">
-          <h3>Radar</h3>
-          <RadarChart data={report.radar_chart} />
-        </article>
-
-        <article className="chart-panel">
-          <h3>Performance</h3>
-          <div className="performance-graph">
-            {report.performance_graph.map((point) => (
-              <div key={point.shot}>
-                <span style={{ height: `${Math.max(12, point.goals * 18)}%` }} />
-                <strong>{point.shot}</strong>
-                <em>{point.result}</em>
+            <article className="report-summary">
+              <h3>{report.evolution}</h3>
+              <div className="summary-metrics">
+                <div><span>Goals</span><strong>{report.score}</strong></div>
+                <div><span>Accuracy</span><strong>{report.accuracy}%</strong></div>
+                <div><span>Reaction</span><strong>{report.reaction_time}s</strong></div>
+                <div><span>Role</span><strong>{report.suggested_role}</strong></div>
               </div>
-            ))}
-          </div>
-        </article>
+              <p>{report.match_story}</p>
+              <div className="insight-row">
+                <div>
+                  <span>Best Skill</span>
+                  <strong>{report.best_skill}</strong>
+                </div>
+                <div>
+                  <span>Weakness</span>
+                  <strong>{report.weakness}</strong>
+                </div>
+              </div>
+            </article>
 
-        <article className="share-card">
-          <span>{report.shareable_card.title}</span>
-          <strong>{report.shareable_card.headline}</strong>
-          <p>Rating {report.shareable_card.rating}</p>
-          {shareStatus ? <em>{shareStatus}</em> : null}
-        </article>
+            <article className="chart-panel">
+              <h3>Radar</h3>
+              <RadarChart data={report.radar_chart} />
+            </article>
+
+            <article className="chart-panel">
+              <h3>Performance</h3>
+              <div className="performance-graph">
+                {report.performance_graph.map((point) => (
+                  <div key={point.shot}>
+                    <span style={{ height: `${Math.max(12, point.goals * 18)}%` }} />
+                    <strong>{point.shot}</strong>
+                    <em>{point.result}</em>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="share-card">
+              <span>{report.shareable_card.title}</span>
+              <strong>{report.shareable_card.headline}</strong>
+              <p>Rating {report.shareable_card.rating}</p>
+              {shareStatus ? <em>{shareStatus}</em> : null}
+            </article>
+          </>
+        )}
 
         <article className="coach-report">
           <h3>Coach Classification</h3>
           {coachResult ? (
             <>
-              <strong>{coachResult.ranking}</strong>
-              <p>{coachResult.final_score} | {coachResult.key_event}</p>
+              <strong>{coachResult.manager_title ?? (coachResult.total_points >= 800 ? "Elite Tactician" : coachResult.total_points >= 400 ? "Pro Manager" : "Sunday League Coach")}</strong>
+              <p>{coachResult.final_score} | {coachResult.total_points} Pts</p>
             </>
           ) : (
             <>

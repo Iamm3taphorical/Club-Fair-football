@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, apiWebSocketUrl } from '../api';
+import { initAudio, playCrowdCue, playShotStrike, speakCommentary } from '../audio';
 import {
   attachStreamToVideo,
   cameraErrorMessage,
@@ -31,8 +32,8 @@ const GESTURES: Record<string, { shot: string; target: string; zone: string; key
   'Point Right': { shot: 'Right Shot', target: 'Right Corner', zone: 'right-low', key: 'Right' },
   'Point Up': { shot: 'Top Corner', target: 'Top Corner', zone: 'top-right', key: 'Top' },
   'Point Down': { shot: 'Low Shot', target: 'Low Shot', zone: 'center-low', key: 'Low' },
+  Flick: { shot: 'Flick Shot', target: 'Top Corner', zone: 'top-right', key: 'Flick' },
   Fist: { shot: 'Power Shot', target: 'Power Shot', zone: 'right-high', key: 'Power' },
-  Pinch: { shot: 'Panenka', target: 'Panenka', zone: 'center', key: 'Panenka' },
 };
 
 const TARGET_TO_ZONE: Record<string, string> = {
@@ -41,7 +42,6 @@ const TARGET_TO_ZONE: Record<string, string> = {
   'Top Corner': 'top-right',
   'Low Shot': 'center-low',
   'Power Shot': 'right-high',
-  Panenka: 'center',
 };
 
 const COMMENTARY_STYLES = ['Professional', 'Emotional Uncle', 'Conspiracy Analyst', 'Robot AI'];
@@ -55,6 +55,14 @@ type StoredPenaltySession = {
 type InitialPenaltySession = {
   sessionId?: number;
   attempts: PenaltyAttempt[];
+};
+
+type VisionDebug = {
+  landmarks?: Array<{ x: number; y: number; z?: number }>;
+  raw_landmarks?: Array<{ x: number; y: number; z?: number }>;
+  gesture?: string | null;
+  confidence?: number;
+  palm_scale?: number;
 };
 
 function penaltyStorageKey(userId?: string) {
@@ -108,13 +116,54 @@ export default function PenaltyGame({
   const [commentary, setCommentary] = useState('Step up to the spot. The stadium is waiting.');
   const [attempts, setAttempts] = useState<PenaltyAttempt[]>(initialPenaltySession.attempts);
   const [shotResult, setShotResult] = useState<'Goal' | 'Saved' | 'Missed' | null>(null);
-  const [ballZone, setBallZone] = useState<string | null>(null);
+  const [ballPos, setBallPos] = useState<{ left: string; top: string } | null>(null);
   const [keeperZone, setKeeperZone] = useState('center');
   const [chargePower, setChargePower] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [cameraState, setCameraState] = useState<CameraState>('idle');
   const [cameraMessage, setCameraMessage] = useState('Front camera feed waiting.');
   const [visionMessage, setVisionMessage] = useState('Gesture detector waiting for the backend.');
+  const [pointerPos, setPointerPos] = useState<{x: number, y: number} | null>(null);
+  const [debugOverlay, setDebugOverlay] = useState(false);
+  const [visionDebug, setVisionDebug] = useState<VisionDebug | null>(null);
+  const [powerTimer, setPowerTimer] = useState<number | null>(null);
+  const [gamePhase, setGamePhase] = useState<'idle' | 'charging' | 'aiming' | 'shooting'>('idle');
+
+  const powerTimerRef = useRef<number | null>(null);
+  const chargePowerRef = useRef(0);
+  const pointerPosRef = useRef<{ x: number; y: number } | null>(null);
+  const gamePhaseRef = useRef<'idle' | 'charging' | 'aiming' | 'shooting'>('idle');
+
+  useEffect(() => { powerTimerRef.current = powerTimer; }, [powerTimer]);
+  useEffect(() => { chargePowerRef.current = chargePower; }, [chargePower]);
+  useEffect(() => { pointerPosRef.current = pointerPos; }, [pointerPos]);
+  useEffect(() => { gamePhaseRef.current = gamePhase; }, [gamePhase]);
+
+  useEffect(() => {
+    if (powerTimer === null) return;
+    if (powerTimer <= 0) {
+      if (gamePhaseRef.current === 'charging') {
+        // Time expired while charging - auto lock power and transition to aiming
+        setGamePhase('aiming');
+        setPowerTimer(5); // 5s to aim
+        setVisionMessage('Power auto-locked! You have 5s to point your direction.');
+      } else if (gamePhaseRef.current === 'aiming') {
+        // Time expired while aiming - auto fire center shot
+        void handleShotRef.current('Point Down', chargePowerRef.current, 0);
+        setPowerTimer(null);
+        setPointerPos(null);
+      }
+      return;
+    }
+    const timerId = window.setTimeout(() => setPowerTimer(prev => prev !== null ? prev - 1 : null), 1000);
+    return () => window.clearTimeout(timerId);
+  }, [powerTimer]);
+
+  useEffect(() => {
+    if (commentary && commentary !== 'Step up to the spot. The stadium is waiting.') {
+      speakCommentary(commentary);
+    }
+  }, [commentary]);
 
   const goals = attempts.filter((attempt) => attempt.result === 'Goal').length;
   const accuracy = attempts.length ? Math.round((goals / attempts.length) * 100) : 0;
@@ -123,6 +172,7 @@ export default function PenaltyGame({
     : '0.00';
 
   const startCamera = useCallback(async () => {
+    initAudio(); // Initialize background audio on user interaction
     const unavailable = cameraUnavailableMessage();
     if (unavailable) {
       setCameraState('unavailable');
@@ -255,15 +305,18 @@ export default function PenaltyGame({
   }, [activeDna, navigate, setDna, setPlayerReport, user]);
 
   const handleShot = useCallback(async (gesture: string, power = 0.62, curve = 0.18) => {
+    initAudio(); // Ensure audio starts on any shot interaction
     if (animatingRef.current || attemptsRef.current.length >= MAX_SHOTS) return;
     const gestureConfig = GESTURES[gesture];
     if (!gestureConfig) return;
 
     animatingRef.current = true;
+    setGamePhase('shooting');
+    setPowerTimer(null);
     setActiveGesture(gesture);
-    setChargePower(gesture === 'Fist' ? power : 0);
-    setBallZone(gestureConfig.zone);
+    setChargePower(gesture === 'Fist' ? power : chargePowerRef.current || power);
     setCommentary(`${gestureConfig.shot} selected.`);
+    playShotStrike();
 
     let nextAttempt: PenaltyAttempt;
     try {
@@ -296,7 +349,12 @@ export default function PenaltyGame({
     }
 
     setKeeperZone(TARGET_TO_ZONE[nextAttempt.keeper_guess] ?? 'center');
-    setShotResult(nextAttempt.result);
+    const vertical = pointerPosRef.current ? 1.0 - pointerPosRef.current.y : 0.5;
+    const horizontal = pointerPosRef.current ? pointerPosRef.current.x : 0.5;
+    const powerValue = chargePowerRef.current || power;
+    const { leftPct, topPct } = calculateKickPhysics(vertical, horizontal, powerValue);
+    setBallPos({ left: `${leftPct}%`, top: `${topPct}%` });
+    window.setTimeout(() => setShotResult(nextAttempt.result), 360);
     setCommentary(nextAttempt.commentary);
     playCrowdCue(nextAttempt.result);
     const updatedAttempts = [...attemptsRef.current, nextAttempt];
@@ -305,10 +363,11 @@ export default function PenaltyGame({
 
     window.setTimeout(() => {
       setShotResult(null);
-      setBallZone(null);
+      setBallPos(null);
       setKeeperZone('center');
       setActiveGesture(null);
       setChargePower(0);
+      setGamePhase('idle');
       animatingRef.current = false;
 
       if (updatedAttempts.length >= MAX_SHOTS) {
@@ -320,6 +379,7 @@ export default function PenaltyGame({
   const handleShotRef = useRef(handleShot);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability
     handleShotRef.current = handleShot;
   }, [handleShot]);
 
@@ -346,9 +406,12 @@ export default function PenaltyGame({
           gesture?: string;
           power?: number;
           curve?: number;
+          pointer?: {x: number, y: number};
+          debug?: VisionDebug;
           available?: boolean;
           detail?: string;
         };
+        if (data.debug) setVisionDebug(data.debug);
         if (data.type === 'VISION_STATUS') {
           if (data.available) {
             setWsStatus('Vision ready');
@@ -359,16 +422,47 @@ export default function PenaltyGame({
           }
           return;
         }
-        if (data.type !== 'GESTURE_DETECTED' || !data.gesture) return;
-        if (data.gesture === 'Charging') {
-          setActiveGesture('Fist');
-          setChargePower(data.power ?? 0);
-          setVisionMessage(`Charging power ${Math.round((data.power ?? 0) * 100)}%. Release for Power Shot.`);
+
+        if (data.type === 'POINTER_UPDATE' && data.pointer) {
+          setPointerPos(data.pointer);
+          if (powerTimerRef.current !== null) {
+             const computedPower = Math.max(0, Math.min(1, 1.0 - data.pointer.y));
+             setChargePower(computedPower);
+             setVisionMessage(`Adjusting power: ${Math.round(computedPower * 100)}%. Shooting in ${powerTimerRef.current}s`);
+          }
           return;
         }
-        const normalizedGesture = data.gesture === 'Power Shot' ? 'Fist' : data.gesture;
-        setVisionMessage(`Detected ${normalizedGesture}.`);
-        void handleShotRef.current(normalizedGesture, data.power ?? 0.62, data.curve ?? 0.18);
+
+        if (data.pointer) {
+          setPointerPos(data.pointer);
+        }
+
+        if (data.type !== 'GESTURE_DETECTED' || !data.gesture) return;
+        
+        if (gamePhaseRef.current === 'idle') {
+           if (data.gesture === 'Charging') {
+               setGamePhase('charging');
+               setPowerTimer(5);
+               setActiveGesture('Fist');
+               setVisionMessage('⚡ Charging power! Release fist to lock.');
+           }
+        } else if (gamePhaseRef.current === 'charging') {
+           if (data.gesture === 'Fist Released') {
+               setChargePower(data.power ?? 1.0);
+               setPowerTimer(null);
+               const releasePointer = data.pointer ?? pointerPosRef.current ?? { x: 0.5, y: 0.62 };
+               setPointerPos(releasePointer);
+               setVisionMessage(`Release detected. Shot sent from ${Math.round(releasePointer.x * 100)}%, ${Math.round(releasePointer.y * 100)}%.`);
+               void handleShotRef.current(gestureFromPointer(releasePointer), data.power ?? chargePowerRef.current, data.curve ?? 0);
+           } else if (data.gesture === 'Charging') {
+               setChargePower(data.power ?? 0.0);
+           }
+        } else if (gamePhaseRef.current === 'aiming') {
+           if (['Point Left', 'Point Right', 'Point Up', 'Point Down', 'Flick'].includes(data.gesture)) {
+               setPowerTimer(null);
+               void handleShotRef.current(data.gesture, chargePowerRef.current, data.curve ?? 0);
+           }
+        }
       };
 
       frameTimer = window.setInterval(() => {
@@ -414,6 +508,13 @@ export default function PenaltyGame({
           </button>
           <span className="pill">{attempts.length}/{MAX_SHOTS}</span>
         </header>
+        <button
+          className="secondary-action camera-action"
+          type="button"
+          onClick={() => setDebugOverlay((current) => !current)}
+        >
+          {debugOverlay ? 'Hide Debug' : 'Show Debug'}
+        </button>
 
         <div className="camera-frame gesture-camera">
           <video ref={videoRef} autoPlay playsInline muted />
@@ -425,9 +526,33 @@ export default function PenaltyGame({
             <span className="finger finger-three" />
             <span className="finger finger-four" />
           </div>
-          {activeGesture ? (
+          {pointerPos && (
+             <div className="finger-tracker" style={{ left: `${pointerPos.x * 100}%`, top: `${pointerPos.y * 100}%` }} />
+          )}
+          {debugOverlay ? (
+            <div className="vision-debug-overlay">
+              {visionDebug?.landmarks?.map((landmark, index) => (
+                <span
+                  key={`lm-${index}`}
+                  className={index === 8 ? 'index-tip' : ''}
+                  style={{ left: `${landmark.x * 100}%`, top: `${landmark.y * 100}%` }}
+                />
+              ))}
+              <div className="vision-debug-readout">
+                <strong>{visionDebug?.gesture ?? activeGesture ?? 'No gesture'}</strong>
+                <small>conf {Math.round((visionDebug?.confidence ?? 0) * 100)}% | palm {visionDebug?.palm_scale?.toFixed(3) ?? 'n/a'}</small>
+                {pointerPos ? <small>x {pointerPos.x.toFixed(2)} y {pointerPos.y.toFixed(2)}</small> : null}
+              </div>
+            </div>
+          ) : null}
+          {powerTimer !== null && (
+             <div className="power-countdown">{powerTimer}s</div>
+          )}
+          {gamePhase !== 'idle' ? (
             <div className="gesture-badge">
-              {activeGesture === 'Fist' ? `Power ${Math.round(chargePower * 100)}%` : GESTURES[activeGesture]?.shot}
+              {gamePhase === 'charging' ? `⚡ Power ${Math.round(chargePower * 100)}%` : 
+               gamePhase === 'aiming' ? `🎯 Aiming (${Math.round(chargePower * 100)}%)` : 
+               activeGesture ? GESTURES[activeGesture]?.shot : ''}
             </div>
           ) : null}
           {cameraState !== 'ready' ? (
@@ -461,20 +586,23 @@ export default function PenaltyGame({
           </label>
         </div>
 
-        <div className="gesture-grid">
-          {Object.entries(GESTURES).map(([gesture, config]) => (
-            <button
-              className={activeGesture === gesture ? 'selected' : ''}
-              key={gesture}
-              type="button"
-              onClick={() => void handleShot(gesture, gesture === 'Fist' ? 0.9 : 0.62, gesture === 'Pinch' ? 0.05 : 0.2)}
-              disabled={gameOver || attempts.length >= MAX_SHOTS}
-            >
-              <span>{config.key}</span>
-              <strong>{config.shot}</strong>
-            </button>
-          ))}
-        </div>
+        {(wsStatus.includes('Offline') || wsStatus.includes('unavailable')) && (
+          <div className="gesture-grid">
+            {Object.entries(GESTURES).map(([gesture, config]) => (
+              <button
+                className={activeGesture === gesture ? 'selected' : ''}
+                key={gesture}
+                type="button"
+                onClick={() => void handleShot(gesture, gesture === 'Fist' ? 0.9 : 0.62, gesture === 'Pinch' ? 0.05 : 0.2)}
+                disabled={gameOver || attempts.length >= MAX_SHOTS}
+              >
+                <span>{config.key}</span>
+                <strong>{config.shot}</strong>
+              </button>
+            ))}
+          </div>
+        )}
+
       </section>
 
       <section className="stadium-panel">
@@ -489,7 +617,7 @@ export default function PenaltyGame({
           <div className="goal-mouth">
             <div className="net-grid" />
             <div className={`keeper keeper-${keeperZone}`} />
-            {ballZone ? <div className={`match-ball ball-${ballZone}`} /> : null}
+            {ballPos ? <div className="match-ball physics-ball" style={{ top: ballPos.top, left: ballPos.left }} /> : null}
             <div className="goal-frame" />
           </div>
           <div className="penalty-spot" />
@@ -555,6 +683,14 @@ function fallbackShot(gesture: string, history: PenaltyAttempt[], style: string)
   };
 }
 
+function gestureFromPointer(pointer: { x: number; y: number }) {
+  if (pointer.y < 0.34) return 'Point Up';
+  if (pointer.x < 0.38) return 'Point Left';
+  if (pointer.x > 0.62) return 'Point Right';
+  if (pointer.y > 0.68) return 'Point Down';
+  return 'Pinch';
+}
+
 function buildFallbackReport(user: UserProfile | null, dna: DNAProfile, attempts: PenaltyAttempt[]): PlayerReport {
   const total = Math.max(attempts.length, 1);
   const goals = attempts.filter((attempt) => attempt.result === 'Goal').length;
@@ -594,29 +730,25 @@ function buildFallbackReport(user: UserProfile | null, dna: DNAProfile, attempts
   };
 }
 
-function playCrowdCue(result: 'Goal' | 'Saved' | 'Missed') {
-  try {
-    type AudioContextConstructor = typeof AudioContext;
-    const audioWindow = window as Window & { webkitAudioContext?: AudioContextConstructor };
-    const AudioCtor = window.AudioContext ?? audioWindow.webkitAudioContext;
-    if (!AudioCtor) return;
-    const context = new AudioCtor();
-    const gain = context.createGain();
-    gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(result === 'Goal' ? 0.22 : 0.14, context.currentTime + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.55);
-    gain.connect(context.destination);
+function calculateKickPhysics(vertical: number, horizontal: number, power: number) {
+  // Blenderous formula: designed for an 810x440 canvas where the penalty spot
+  // is at (390, 440) and the goal frame spans roughly x:[114..710], y:[98..292].
+  const rawTop = 440 - ((0.8 + vertical) / 1.8) * power * 440 + 0.3 * power * ((Math.abs(0.5 - horizontal)) / 0.5) * 440;
+  const rawLeft = 405 + power * (horizontal - 0.5) * 810;
 
-    const frequencies = result === 'Goal' ? [196, 247, 330, 494] : [164, 138, 110];
-    frequencies.forEach((frequency, index) => {
-      const oscillator = context.createOscillator();
-      oscillator.type = result === 'Goal' ? 'sawtooth' : 'square';
-      oscillator.frequency.setValueAtTime(frequency, context.currentTime + index * 0.045);
-      oscillator.connect(gain);
-      oscillator.start(context.currentTime + index * 0.045);
-      oscillator.stop(context.currentTime + 0.58);
-    });
-  } catch {
-    // Browser audio may be unavailable or blocked until user interaction.
-  }
+  // Goal-mouth bounding box in blenderous pixel space
+  const goalLeft = 114;
+  const goalRight = 710;
+  const goalTop = 98;
+  const goalBottom = 292;
+
+  // Clamp to goal-mouth bounds so the ball always lands inside the visible frame
+  const clampedLeft = Math.max(goalLeft, Math.min(goalRight, rawLeft));
+  const clampedTop = Math.max(goalTop, Math.min(goalBottom, rawTop));
+
+  // Convert to percentage within the goal-mouth container (0-100%)
+  const leftPct = ((clampedLeft - goalLeft) / (goalRight - goalLeft)) * 100;
+  const topPct = ((clampedTop - goalTop) / (goalBottom - goalTop)) * 100;
+
+  return { leftPct, topPct };
 }

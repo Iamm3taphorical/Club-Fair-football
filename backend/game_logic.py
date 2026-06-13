@@ -1,13 +1,14 @@
 import hashlib
+import random
 from typing import Dict, Any, List
 
 class PenaltyGameEngine:
     def __init__(self):
         # AI Goalkeeper difficulty modes
         self.difficulties = {
-            "Easy": 0.2,
-            "Medium": 0.5,
-            "Hard": 0.75,
+            "Easy": 0.4,
+            "Medium": 0.65,
+            "Hard": 0.85,
             "Legendary": 0.95
         }
 
@@ -19,45 +20,30 @@ class PenaltyGameEngine:
         previous_targets = [shot for shot in previous_shots if shot in self._targets()]
         attempt_index = len(previous_targets) + 1
         
-        # 1. Analyze player patterns. The keeper is deterministic/adaptive rather
-        # than a plain random picker, but still has imperfect human-like reads.
+        # 1. AI Keeper decides where to dive
         keeper_guess = self._ai_keeper_guess(previous_targets, difficulty_level, player_id, shot_target)
         
-        # 2. Shot Execution Score based on Power and Curve
-        # High power increases chance of goal, but reduces accuracy
-        accuracy_penalty = max(0, (power - 0.78) * 0.38)
-        
-        # Curve can deceive the keeper
-        deception_bonus = abs(curve) * 0.22
-        target_bonus = {
-            "Left Corner": 0.07,
-            "Right Corner": 0.07,
-            "Top Corner": -0.04,
-            "Low Shot": 0.03,
-            "Panenka": -0.08,
-            "Power Shot": 0.02,
-        }.get(shot_target, 0.0)
-        
-        execution_roll = self._stable_roll(player_id, gesture, shot_target, attempt_index, power, curve)
-        shot_accuracy = execution_roll - accuracy_penalty + deception_bonus + target_bonus
+        # 2. Determine result based on keeper guess vs shot target
         repeated_count = previous_targets.count(shot_target)
         adaptive_pressure = min(0.18, repeated_count * 0.06)
         effective_difficulty = min(0.98, base_diff + adaptive_pressure)
         reaction_delay = self._reaction_delay(effective_difficulty, repeated_count, keeper_guess == shot_target)
         
-        # 3. Determine result
+        # Use real randomness for the execution quality
+        execution_roll = random.random()
+        
         if keeper_guess == shot_target:
-            # Keeper dived the right way, harder to score
-            if shot_accuracy > (effective_difficulty + 0.22) and power > 0.8:
-                result = "Goal" # Overpowered the keeper
+            # Keeper dived the right way — very hard to score
+            if power > 0.85 and execution_roll > 0.75:
+                result = "Goal"  # Overpowered the keeper
             else:
                 result = "Saved"
         else:
-            # Keeper went the wrong way
-            if shot_accuracy > (effective_difficulty * 0.46):
-                result = "Goal"
+            # Keeper went the wrong way — should almost always be a goal
+            if execution_roll < 0.12:
+                result = "Missed"  # Skied it or hit the post
             else:
-                result = "Missed" # Wide or over the bar
+                result = "Goal"
                 
         return {
             "result": result,
@@ -72,14 +58,17 @@ class PenaltyGameEngine:
             "reaction_delay": reaction_delay,
             "reaction_time": reaction_delay,
             "prediction_basis": self._prediction_basis(previous_targets, keeper_guess),
-            "shot_accuracy": round(max(0.0, min(1.0, shot_accuracy)), 3)
+            "shot_accuracy": round(max(0.0, min(1.0, execution_roll)), 3)
         }
 
     def _ai_keeper_guess(self, previous_shots: List[str], difficulty: str, player_id: str, intended_target: str) -> str:
         targets = self._targets()
         if not previous_shots:
-            index = int(self._stable_roll(player_id, difficulty, intended_target) * len(targets))
-            return targets[min(index, len(targets) - 1)]
+            return random.choices(
+                ["Left Corner", "Right Corner", "Top Corner", "Low Shot"],
+                weights=[0.4, 0.4, 0.15, 0.05],
+                k=1
+            )[0]
             
         counts = {}
         for shot in previous_shots:
@@ -88,21 +77,29 @@ class PenaltyGameEngine:
         most_frequent = max(counts, key=counts.get)
         last_shot = previous_shots[-1]
         predictability = {
-            "Easy": 0.18,
-            "Medium": 0.38,
-            "Hard": 0.58,
-            "Legendary": 0.82,
-        }.get(difficulty, 0.38)
-        repeat_bias = min(0.18, counts.get(intended_target, 0) * 0.06)
-        read_score = self._stable_roll(player_id, difficulty, intended_target, len(previous_shots), most_frequent)
+            "Easy": 0.15,
+            "Medium": 0.30,
+            "Hard": 0.50,
+            "Legendary": 0.70,
+        }.get(difficulty, 0.30)
+        repeat_bias = min(0.25, counts.get(intended_target, 0) * 0.08)
         
-        if read_score < predictability + repeat_bias:
+        # Use actual randomness for a realistic keeper
+        read_roll = random.random()
+        
+        if read_roll < predictability + repeat_bias:
+            return intended_target
+        if read_roll < predictability + repeat_bias + 0.15:
             return most_frequent
-        if read_score < predictability + repeat_bias + 0.12:
+        if read_roll < predictability + repeat_bias + 0.25:
             return last_shot
 
-        index = int(read_score * len(targets))
-        return targets[min(index, len(targets) - 1)]
+        # Random dive, heavily favoring corners since keepers rarely stay middle
+        return random.choices(
+            ["Left Corner", "Right Corner", "Top Corner", "Low Shot"],
+            weights=[0.4, 0.4, 0.15, 0.05],
+            k=1
+        )[0]
 
     def _reaction_delay(self, difficulty: float, repeated_count: int, correct_read: bool) -> float:
         base_delay = 0.92 - (difficulty * 0.38) - (repeated_count * 0.035)

@@ -72,3 +72,14 @@ def test_pinch_takes_priority_over_pointing():
     lm[4] = point(0.51, 0.17)
 
     assert classify(lm) == "Pinch"
+
+
+def test_closed_fist_registers_with_curled_tips():
+    lm = base_landmarks()
+    lm[4] = point(0.48, 0.68)
+    for mcp, pip, tip, x in ((5, 6, 8, 0.46), (9, 10, 12, 0.5), (13, 14, 16, 0.54), (17, 18, 20, 0.58)):
+        lm[mcp] = point(x, 0.55)
+        lm[pip] = point(x, 0.62)
+        lm[tip] = point(x, 0.67)
+
+    assert classify(lm) == "Fist"

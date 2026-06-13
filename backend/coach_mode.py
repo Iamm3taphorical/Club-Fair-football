@@ -3,134 +3,156 @@ from typing import Dict, Any, List
 
 class TacticalGenerator:
     def __init__(self):
-        self.formations = ["4-3-3", "4-2-3-1", "4-4-2", "3-5-2", "3-4-3"]
+        self.formations = [
+            "4-3-3", "4-2-3-1", "4-4-2", "3-5-2", "3-4-3", 
+            "4-1-4-1", "4-3-2-1", "5-3-2", "5-4-1", "4-2-2-2",
+            "4-4-1-1", "3-4-2-1", "3-4-1-2", "4-1-2-1-2", "4-5-1"
+        ]
         self.strategies = ["High Press", "Defensive Block", "Counter Attack", "Possession", "Gegenpressing"]
-        self.scores = ["0-1", "1-1", "1-2", "2-2"]
-        self.objectives = ["Equalize", "Protect the lead", "Find the winner", "Survive the press"]
+        self.coaches = [
+            "Pep Guardiola", "Jurgen Klopp", "Jose Mourinho", "Carlo Ancelotti", 
+            "Mikel Arteta", "Diego Simeone", "Erik ten Hag", "Xabi Alonso", 
+            "Roberto De Zerbi", "Zinedine Zidane"
+        ]
 
-    def generate_scenario(self) -> Dict[str, Any]:
-        minute = random.randint(73, 86)
-        score = random.choice(self.scores)
+    def generate_segment_scenario(self, segment: str, current_score: str) -> Dict[str, Any]:
+        """
+        Generates a dynamic scenario for the specific segment.
+        Segments: '0-15', '16-30', '31-45', '46-60', '61-75', '76-90'
+        """
         opponent_formation = random.choice(self.formations)
-        opponent_strategy = random.choice(self.strategies)
-        objective = "Equalize" if score in {"0-1", "1-2"} else random.choice(self.objectives)
+        
+        # Determine opponent strategy based on segment and score
+        h_score, a_score = map(int, current_score.split('-'))
+        if segment in {"76-90", "61-75"} and a_score < h_score:
+            opponent_strategy = "High Press" # Opponent trailing
+        elif segment in {"76-90", "61-75"} and a_score > h_score:
+            opponent_strategy = "Defensive Block" # Opponent leading
+        else:
+            opponent_strategy = random.choice(self.strategies)
+            
+        pressure = "High" if opponent_strategy in {"High Press", "Gegenpressing"} else "Medium"
         
         return {
-            "minute": minute,
-            "current_score": score,
-            "score": score,
+            "segment": segment,
+            "current_score": current_score,
             "opponent_formation": opponent_formation,
-            "formation": opponent_formation,
             "opponent_strategy": opponent_strategy,
-            "opponent": opponent_strategy,
-            "objective": objective,
-            "pressure_level": "High" if minute > 78 else "Medium"
+            "pressure_level": pressure,
+            "objective": "Win the segment"
+        }
+
+    def generate_scenario(self) -> Dict[str, Any]:
+        """Backward-compatible single scenario used by older tests/tools."""
+        scenario = self.generate_segment_scenario("0-15", "0-0")
+        return {
+            **scenario,
+            "minute": 0,
+            "opponent_shape": scenario["opponent_formation"],
         }
 
 class MatchSimulationEngine:
     def __init__(self):
         pass
 
-    def simulate_match(self, scenario: Dict[str, Any], user_tactics: Dict[str, Any], coach_dna: Dict[str, int]) -> Dict[str, Any]:
+    def simulate_segment(self, scenario: Dict[str, Any], user_tactics: Dict[str, Any], coach_dna: Dict[str, int]) -> Dict[str, Any]:
         """
-        Simulates the remainder of a match based on tactical decisions.
+        Simulates 15 minutes of a match based on tactical decisions.
         """
         timeline = []
-        current_minute = scenario["minute"]
+        segment = scenario.get("segment", "0-15")
+        start_min, end_min = map(int, segment.split('-'))
         
-        # Calculate base probabilities
         attack_power = user_tactics.get("attack", 50) + (coach_dna.get("vision", 70) * 0.2)
         defense_power = user_tactics.get("defense", 50) + (coach_dna.get("leadership", 70) * 0.2)
         possession_power = user_tactics.get("possession", 55) + (coach_dna.get("creativity", 70) * 0.12)
-        pressure = user_tactics.get("pressure", user_tactics.get("attack", 50))
-        width = user_tactics.get("width", 58)
+        pressure_power = user_tactics.get("pressure", 55)
+        width_power = user_tactics.get("width", 55)
         
-        # Modifier based on opponent strategy
+        # Stamina modifier (simulated based on segment)
+        stamina_drain = (end_min / 90.0) * 15 
+        attack_power -= stamina_drain
+        defense_power -= stamina_drain
+        
+        # Tactical Rock-Paper-Scissors
         if scenario["opponent_strategy"] == "Defensive Block" and attack_power < 75:
-            attack_power -= 10 # Hard to break down
+            attack_power -= 10
         if scenario["opponent_strategy"] == "Counter Attack" and defense_power < 62:
-            defense_power -= 8
-        if user_tactics.get("formation") == "3-4-3":
-            attack_power += 8
-            defense_power -= 6
-        elif user_tactics.get("formation") == "4-2-3-1":
-            possession_power += 8
-            defense_power += 3
+            defense_power -= 10
+        if scenario["opponent_strategy"] == "High Press" and possession_power < 65:
+            possession_power -= 10
+        if scenario["opponent_strategy"] == "Defensive Block" and width_power > 68:
+            attack_power += 5
+        if scenario["opponent_strategy"] == "Possession" and pressure_power > 68:
+            defense_power += 5
             
         home_score = int(scenario["current_score"].split("-")[0])
         away_score = int(scenario["current_score"].split("-")[1])
-        chance_creation = 0
-        possession_changes = []
         
-        while current_minute <= 90:
-            current_minute += random.randint(2, 6)
-            if current_minute > 90:
-                break
-                
-            # Event generation
-            event_roll = random.random()
-            if event_roll < (attack_power / 200.0):
-                chance_creation += 1
-                timeline.append(f"{current_minute}' GOAL! Brilliant tactical setup leads to a score.")
-                home_score += 1
-            elif event_roll > (1.0 - (defense_power / 200.0)):
-                possession_changes.append(f"{current_minute}' regained")
-                timeline.append(f"{current_minute}' Strong defensive block prevents an opponent counter-attack.")
-            elif event_roll < 0.2:
-                chance_creation += 1
-                timeline.append(f"{current_minute}' Opponent creates a chance, but it goes wide.")
+        segment_goals_for = 0
+        segment_goals_against = 0
+        passes_completed = random.randint(38, 72) + int(max(0, possession_power) * 0.42)
+        shots_attempted = random.randint(0, 2) + int(max(0, attack_power - 45) * 0.035)
+        fouls = random.randint(1, 4)
+        offsides = random.randint(0, 2)
+
+        user_goal_prob = min(0.30, max(0.035, 0.10 + ((attack_power - 65) / 500.0) + ((possession_power - 60) / 900.0)))
+        opponent_goal_prob = min(0.28, max(0.025, 0.09 + ((68 - defense_power) / 520.0)))
+
+        if random.random() < user_goal_prob:
+            minute = random.randint(start_min + 2, end_min)
+            timeline.append(f"{minute}' GOAL! The {user_tactics.get('formation', 'custom')} shape opens the {scenario['opponent_strategy']}.")
+            home_score += 1
+            segment_goals_for = 1
+            shots_attempted += 1
+        if random.random() < opponent_goal_prob:
+            minute = random.randint(start_min + 2, end_min)
+            timeline.append(f"{minute}' Goal conceded. The opponent exploited a gap against the {user_tactics.get('formation', 'custom')} block.")
+            away_score += 1
+            segment_goals_against = 1
 
         if not timeline:
-            timeline.append(f"{min(90, scenario['minute'] + 4)}' Tactical reshuffle stabilizes possession and pins the opponent back.")
-                
-        final_score = f"{home_score}-{away_score}"
-        tactical_rating = self._rating(attack_power, defense_power, possession_power, pressure, width, home_score, away_score, scenario)
-        ranking = self._rank(tactical_rating)
-        key_event = next((event for event in timeline if "GOAL" in event), timeline[-1])
-        
-        # AI Explanation
-        explanation = self._generate_tactical_explanation(user_tactics, scenario, home_score, away_score)
+            minute = random.randint(start_min + 3, end_min)
+            if possession_power > 70:
+                timeline.append(f"{minute}' Strong possession spell controls the tempo at {scenario['current_score']}.")
+            elif defense_power > 72:
+                timeline.append(f"{minute}' Compact defending shuts down the {scenario['opponent_strategy']}.")
+            else:
+                timeline.append(f"{minute}' Midfield battle, neither side creating a clear chance.")
+
+        # Segment Tactical Points
+        segment_points = (segment_goals_for * 20) - (segment_goals_against * 15)
+        if passes_completed > 100: segment_points += 5
+        if segment_goals_for == 0 and segment_goals_against == 0 and defense_power > 70: segment_points += 10
         
         return {
-            "final_score": final_score,
+            "new_score": f"{home_score}-{away_score}",
+            "segment_goals_for": segment_goals_for,
+            "segment_goals_against": segment_goals_against,
             "timeline": timeline,
-            "explanation": explanation,
-            "key_event": key_event,
-            "tactical_rating": tactical_rating,
-            "ranking": ranking,
-            "coach_rank": ranking,
-            "chance_creation": chance_creation,
-            "possession_changes": possession_changes,
-            "scores": {
-                "attack": round(min(100, attack_power)),
-                "defense": round(min(100, defense_power)),
-                "possession": round(min(100, possession_power)),
-                "creativity": round(min(100, (attack_power + possession_power) / 2)),
-            }
+            "stats": {
+                "passes": passes_completed,
+                "shots": shots_attempted,
+                "fouls": fouls,
+                "offsides": offsides
+            },
+            "segment_points": max(0, segment_points),
         }
 
-    def _generate_tactical_explanation(self, tactics: Dict[str, Any], scenario: Dict[str, Any], h_score: int, a_score: int) -> str:
-        if tactics.get("formation") == "3-4-3" and scenario["opponent_strategy"] == "Counter Attack":
-            return "Your high wingbacks left the defense exposed to counter-attacks, making it a highly volatile game."
-        if tactics.get("possession") > 80:
-            return "Your heavy possession strategy successfully starved the opponent of the ball, limiting their chances."
-        if scenario["opponent_strategy"] == "Defensive Block" and tactics.get("width", 50) > 65:
-            return "Your wide overloads stretched the defensive block and created better crossing lanes late in the match."
-        return "Your tactical setup provided a balanced approach, though specific width adjustments could have optimized chance creation."
-
-    def _rating(self, attack_power: float, defense_power: float, possession_power: float, pressure: int, width: int, h_score: int, a_score: int, scenario: Dict[str, Any]) -> int:
-        game_state_bonus = 10 if h_score >= a_score and scenario.get("objective") == "Equalize" else 0
-        balance_penalty = abs(attack_power - defense_power) * 0.08
-        pressure_bonus = min(8, max(0, pressure - 60) * 0.15)
-        width_bonus = 5 if scenario.get("opponent_strategy") == "Defensive Block" and width >= 65 else 0
-        raw = ((attack_power * 0.34) + (defense_power * 0.28) + (possession_power * 0.28)) - balance_penalty + pressure_bonus + width_bonus + game_state_bonus
-        return round(max(35, min(99, raw)))
-
-    def _rank(self, rating: int) -> str:
-        if rating >= 90:
-            return "Football Genius"
-        if rating >= 78:
-            return "Elite Manager"
-        if rating >= 62:
-            return "Tactical Analyst"
-        return "Sunday League Coach"
+    def simulate_match(self, scenario: Dict[str, Any], user_tactics: Dict[str, Any], coach_dna: Dict[str, int]) -> Dict[str, Any]:
+        """Backward-compatible full-match wrapper for older callers."""
+        score = scenario.get("current_score", "0-0")
+        timeline: List[str] = []
+        total_points = 0
+        for segment in ["0-15", "16-30", "31-45", "46-60", "61-75", "76-90"]:
+            segment_scenario = {**scenario, "segment": segment, "current_score": score}
+            result = self.simulate_segment(segment_scenario, user_tactics, coach_dna)
+            score = result["new_score"]
+            timeline.extend(result["timeline"])
+            total_points += result["segment_points"]
+        return {
+            "final_score": score,
+            "timeline": timeline,
+            "total_points": total_points,
+            "explanation": "Six balanced 15-minute segments simulated from tactics, score state, and coach DNA.",
+        }

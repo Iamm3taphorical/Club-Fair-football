@@ -1,0 +1,49 @@
+=========================================================
+          FOOTBALLVERSE AI - PROJECT DETAILS
+=========================================================
+
+1. PROJECT OVERVIEW
+---------------------------------------------------------
+FootballVerse AI is a next-generation, AI-driven football gaming ecosystem. It is designed to test a user's physical reflexes, tactical intelligence, and historical knowledge of the beautiful game. Built with a modern React frontend and a powerful FastAPI backend, the platform features real-time computer vision, complex match simulation engines, and global leaderboards.
+
+
+2. CORE FEATURES
+---------------------------------------------------------
+- Immersive UI/UX: A sleek, dark-themed interface featuring dynamic stadium backgrounds, rain animations, and cinematic splash screens.
+- Global Leaderboards: Independent competitive ladders tracking the top 100 players worldwide for each distinct game mode.
+- Player Profiles & DNA: Users login with a unique ID and Name, building a persistent "Football DNA" profile that tracks their playstyle, stats, and achievements across modes.
+- Computer Vision Integration: Real-time webcam tracking using MediaPipe for physical, gesture-based gameplay.
+
+
+3. GAME MODES
+---------------------------------------------------------
+
+MODE 1: PLAYER ARENA (The Penalty Shootout)
+- Focus: Reflexes & Computer Vision
+- Mechanics: The user steps into a virtual penalty shootout. Using the device's webcam, the game tracks the user's hand movements in real-time. The user aims a crosshair using their hand and performs gestures (like closing their fist to charge power, opening it to shoot) to strike the ball past an AI goalkeeper.
+- Output: After the shootout, the user receives a detailed "Player Report" that analyzes their reaction times, accuracy, and compares their playstyle to legendary footballers (their "DNA Match").
+
+MODE 2: TACTICAL COACH (The Match Simulator)
+- Focus: Strategy & Resource Management
+- Mechanics: The user assumes the role of a manager during a full 90-minute football match. The match is broken down into 15-minute simulation segments (0-15', 16-30', etc.). 
+- Tactical Board: A drag-and-drop tactical pitch visualizer allows the user to switch between 15 different formations and assign roles to players.
+- Substitutions & Stamina: Player stamina drains realistically. The manager has exactly 5 substitutions available and must use them wisely, including a dedicated 60-second Half-Time break for making crucial adjustments.
+- Scenarios: Before every 15-minute segment, the AI generates a dynamic scenario (e.g., "The opponent is pressing high") and the user must adjust their tactics to counter it.
+- Output: The match resolves with a realistic scoreline based on tactical decisions. Managers earn "Tactical Points" and are awarded titles like "Elite Tactician" or "Sunday League Coach".
+
+MODE 3: FAN TRIVIA (The Ultimate Gauntlet)
+- Focus: Football Knowledge & History
+- Mechanics: A high-stakes, rapid-fire trivia game. The user has exactly 5 minutes (300 seconds) on a global countdown timer to clear four categories: Guess The Player, Guess The Coach, Guess The Stadium, and Guess The Iconic Match.
+- Progressive Clues: The AI selects a legendary entity from a massive database and reveals up to 10 progressive clues. The first clue is incredibly obscure (e.g., childhood medical records, early-career red cards), while the 10th clue is a dead giveaway.
+- Scoring System: Guessing correctly on Clue 1 awards 10 points. Guessing on Clue 10 awards 1 point. 
+- MCQ Format: Instead of typing, users are presented with 4 realistic multiple-choice options that shuffle every round, forcing them to rely on pure knowledge rather than typing speed.
+- Output: The player receives a score out of 40 and is ranked on the Fan Leaderboard with titles ranging from "Sunday Fan" to "FootballVerse Immortal".
+
+
+4. TECHNICAL STACK
+---------------------------------------------------------
+- Frontend: React, TypeScript, Vite, Vanilla CSS.
+- Backend: Python, FastAPI, SQLAlchemy, SQLite.
+- Core Engines: MediaPipe (Computer Vision), Custom Python Algorithms (Match Simulation & Tactical Generators).
+
+=========================================================

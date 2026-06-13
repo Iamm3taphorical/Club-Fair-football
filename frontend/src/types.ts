@@ -105,7 +105,7 @@ export type PlayerReport = {
 };
 
 export type CoachScenario = {
-  minute: number;
+  segment: string;
   current_score: string;
   opponent_formation: string;
   opponent_strategy: string;
@@ -126,19 +126,10 @@ export type CoachTactics = {
   player_positions: Array<{ id: number; label: string; x: number; y: number }>;
 };
 
-export type CoachResult = {
+export interface CoachResult {
   final_score: string;
   timeline: string[];
-  explanation: string;
-  key_event: string;
-  tactical_rating: number;
-  ranking: string;
-  chance_creation: number;
-  possession_changes: string[];
-  scores: {
-    attack: number;
-    defense: number;
-    possession: number;
-    creativity: number;
-  };
-};
+  total_points: number;
+  session_id?: number;
+  manager_title?: string;
+}

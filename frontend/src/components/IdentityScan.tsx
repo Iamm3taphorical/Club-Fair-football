@@ -44,9 +44,10 @@ export default function IdentityScan({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const progressRef = useRef<number | null>(null);
+  const phaseTimeoutRef = useRef<number | null>(null);
   const [phase, setPhase] = useState<'setup' | 'scanning' | 'analyzing' | 'revealed'>('setup');
   const [scanProgress, setScanProgress] = useState(0);
-  const [playstyle, setPlaystyle] = useState('Playmaker');
+  const [playstyle, setPlaystyle] = useState(() => PLAYSTYLES[Math.floor(Math.random() * PLAYSTYLES.length)]);
   const [localDna, setLocalDna] = useState<DNAProfile | null>(null);
   const [cameraState, setCameraState] = useState<CameraState>('idle');
   const [cameraMessage, setCameraMessage] = useState('Front camera permission will be requested by your browser.');
@@ -54,6 +55,7 @@ export default function IdentityScan({
   useEffect(() => {
     return () => {
       if (progressRef.current) window.clearInterval(progressRef.current);
+      if (phaseTimeoutRef.current) window.clearTimeout(phaseTimeoutRef.current);
       stopStream(streamRef.current);
     };
   }, []);
@@ -65,6 +67,7 @@ export default function IdentityScan({
   }, [cameraState, phase]);
 
   const reveal = (profile: DNAProfile, nextUser?: UserProfile) => {
+    if (phaseTimeoutRef.current) window.clearTimeout(phaseTimeoutRef.current);
     setLocalDna(profile);
     setDna(profile);
     if (nextUser) setUser(nextUser);
@@ -126,7 +129,7 @@ export default function IdentityScan({
       });
     }, 60);
 
-    window.setTimeout(() => setPhase('analyzing'), 1450);
+    phaseTimeoutRef.current = window.setTimeout(() => setPhase('analyzing'), 1450);
 
     try {
       await new Promise((resolve) => window.setTimeout(resolve, cameraReady ? 520 : 120));

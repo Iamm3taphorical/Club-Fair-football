@@ -5,3 +5,8 @@ __pycache__/
 .cache/
 database/*.sqlite3
 .env
+.DS_Store
+.vscode/
+*.db-shm
+*.db-wal
+backend/model/

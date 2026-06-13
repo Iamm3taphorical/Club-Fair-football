@@ -16,6 +16,7 @@ from backend.dna_engine import FootballDNAEvolutionEngine
 from backend.face_identity import FaceIdentityMatcher
 from backend.game_logic import PenaltyGameEngine
 from backend.llm_provider import get_commentary_provider
+from backend import fan_mode
 
 
 cv_recognizer = GestureRecognizer()
@@ -73,6 +74,9 @@ def _ensure_schema_compatibility() -> None:
         "commentary_logs": [
             ("event_type", "VARCHAR"),
             ("payload_json", "TEXT DEFAULT '{}'"),
+        ],
+        "leaderboard": [
+            ("mode_title", "VARCHAR"),
         ],
     }
     with database.engine.begin() as conn:
@@ -250,6 +254,68 @@ def _upsert_dna(db: Session, player: models.Player, profile: Dict[str, Any]) -> 
     dna.updated_at = _now()
     player.football_dna_json = _json_dumps(profile)
     return dna
+
+def _title_for_leaderboard(mode: str, score: int) -> str:
+    if mode == "Player":
+        if score >= 480:
+            return "Penalty Royalty"
+        if score >= 380:
+            return "Clutch Finisher"
+        if score >= 250:
+            return "Spot-Kick Specialist"
+        return "Training Ground Prospect"
+    if mode == "Coach":
+        if score >= 520:
+            return "Elite Manager"
+        if score >= 380:
+            return "Tactical Genius"
+        if score >= 240:
+            return "Matchday Strategist"
+        return "Assistant Coach"
+    if score >= 35:
+        return "FootballVerse Immortal"
+    if score >= 30:
+        return "Tactical Genius"
+    if score >= 20:
+        return "Football Historian"
+    if score >= 10:
+        return "Matchday Expert"
+    return "Sunday Fan"
+
+
+def _upsert_leaderboard(db: Session, player_id: str, mode: str, score: int, mode_title: str | None = None):
+    normalized_mode = mode.capitalize()
+    if normalized_mode not in {"Player", "Coach", "Fan"}:
+        raise HTTPException(status_code=400, detail="Invalid leaderboard mode.")
+    safe_score = max(0, int(score))
+    lb = db.query(models.Leaderboard).filter_by(player_id=player_id, mode=normalized_mode).first()
+    if lb:
+        previous_score = lb.total_score or 0
+        stored_score = max(previous_score, safe_score)
+        lb.total_score = stored_score
+        if safe_score >= previous_score:
+            lb.mode_title = mode_title or _title_for_leaderboard(normalized_mode, stored_score)
+        elif not lb.mode_title:
+            lb.mode_title = _title_for_leaderboard(normalized_mode, stored_score)
+    else:
+        stored_score = safe_score
+        lb = models.Leaderboard(
+            player_id=player_id,
+            mode=normalized_mode,
+            total_score=stored_score,
+            rank="Unranked",
+            mode_title=mode_title or _title_for_leaderboard(normalized_mode, stored_score),
+        )
+        db.add(lb)
+    db.flush()
+    
+    # Update ranks for this mode
+    all_lbs = db.query(models.Leaderboard).filter_by(mode=normalized_mode).order_by(models.Leaderboard.total_score.desc()).all()
+    for i, entry in enumerate(all_lbs):
+        entry.rank = str(i + 1)
+    for entry in all_lbs[100:]:
+        db.delete(entry)
+    return lb
 
 
 def _gesture_to_shot(gesture: str) -> Dict[str, str]:
@@ -528,6 +594,17 @@ async def video_websocket(websocket: WebSocket):
         while True:
             data = await websocket.receive_bytes()
             result = cv_recognizer.process_frame(data)
+
+            # Always send pointer tracking data when available
+            pointer = result.get("pointer")
+            debug = result.get("debug")
+            if pointer:
+                await websocket.send_json({
+                    "type": "POINTER_UPDATE",
+                    "pointer": pointer,
+                    "debug": debug,
+                })
+
             if result.get("gesture"):
                 await websocket.send_json({
                     "type": "GESTURE_DETECTED",
@@ -535,6 +612,8 @@ async def video_websocket(websocket: WebSocket):
                     "confidence": result.get("confidence", 0.0),
                     "power": result.get("power", 0.0),
                     "curve": result.get("curve", 0.0),
+                    "pointer": pointer,
+                    "debug": debug,
                 })
             elif result.get("status") in {"cv_disabled", "cv_unavailable"} and not reported_unavailable:
                 await websocket.send_json({
@@ -774,61 +853,118 @@ def complete_penalty_session(payload: Dict[str, Any], db: Session = Depends(data
     _append_session_history(player, {"mode": "Player", "event": "Match Completed", "score": report["score"]})
     _log_event(db, player.id, "DNA_UPDATED", evolved_dna, "penalty", session.id if session else None)
     _log_event(db, player.id, "MATCH_COMPLETED", report, "penalty", session.id if session else None)
+    player_score = (int(report["goals"]) * 100) + int(report["accuracy"])
+    _upsert_leaderboard(db, player.id, "Player", player_score, str(report.get("player_type") or "Penalty Player"))
     db.commit()
     return report
 
 
 @app.post("/api/v3/coach/scenario")
 def get_scenario(payload: Dict[str, Any] = Body(default_factory=dict)):
-    scenario = tactical_gen.generate_scenario()
+    segment = payload.get("segment", "0-15")
+    current_score = payload.get("current_score", "0-0")
+    scenario = tactical_gen.generate_segment_scenario(segment, current_score)
     scenario["coach_style"] = payload.get("coach_style", "Pep Guardiola")
     return scenario
 
 
-@app.post("/api/v3/coach/simulate")
-def simulate_match(payload: Dict[str, Any], db: Session = Depends(database.get_db)):
+@app.post("/api/v3/coach/simulate_segment")
+def simulate_segment(payload: Dict[str, Any], db: Session = Depends(database.get_db)):
     player_id = _player_id_from(payload)
     player = _get_or_create_player(db, player_id, _name_from(payload))
-    scenario = payload.get("scenario") or tactical_gen.generate_scenario()
+    scenario = payload.get("scenario") or tactical_gen.generate_segment_scenario("0-15", "0-0")
     tactics = payload.get("tactics") or {}
     dna = payload.get("dna") or _json_loads(player.football_dna_json, {}).get("stats", {})
-    result = match_sim.simulate_match(scenario, tactics, dna or {})
+    
+    result = match_sim.simulate_segment(scenario, tactics, dna or {})
+    return result
 
+@app.post("/api/v3/coach/complete")
+def complete_coach_match(payload: Dict[str, Any], db: Session = Depends(database.get_db)):
+    player_id = _player_id_from(payload)
+    player = _get_or_create_player(db, player_id, _name_from(payload))
+    
+    final_score = payload.get("final_score", "0-0")
+    total_points = payload.get("total_points", 0)
+    coach_style = payload.get("coach_style", "Custom")
+    match_timeline = payload.get("timeline", [])
+    
     match = models.MatchSession(player_id=player.id, mode="Coach", status="completed", started_at=_now(), completed_at=_now())
     db.add(match)
     db.flush()
+    
+    manager_title = _title_for_leaderboard("Coach", int(total_points))
+    result_json = {
+        "final_score": final_score,
+        "total_points": total_points,
+        "timeline": match_timeline,
+        "manager_title": manager_title,
+    }
+    
     coach_session = models.CoachSession(
         player_id=player.id,
         match_session_id=match.id,
-        coach_style=payload.get("coach_style", tactics.get("coach_style", "Custom")),
-        scenario_json=_json_dumps(scenario),
-        tactics_json=_json_dumps(tactics),
-        result_json=_json_dumps(result),
-        attack_score=result.get("scores", {}).get("attack", 0),
-        defense_score=result.get("scores", {}).get("defense", 0),
-        creativity_score=result.get("scores", {}).get("creativity", 0),
-        tactical_rating=result.get("tactical_rating"),
-        final_rating=result.get("ranking"),
+        coach_style=coach_style,
+        result_json=_json_dumps(result_json),
+        tactical_rating=total_points,
+        final_rating=manager_title,
         created_at=_now(),
     )
     db.add(coach_session)
     db.flush()
-    db.add(
-        models.CoachDecision(
-            session_id=coach_session.id,
-            player_id=player.id,
-            coach_style=coach_session.coach_style,
-            formation=tactics.get("formation"),
-            pressure=int(tactics.get("pressure", tactics.get("attack", 50))),
-            roles_json=_json_dumps(tactics.get("roles", {})),
-            tactics_json=_json_dumps(tactics),
-            scenario_json=_json_dumps(scenario),
-            result_json=_json_dumps(result),
-            created_at=_now(),
-        )
-    )
-    match.summary_json = _json_dumps(result)
-    _append_session_history(player, {"mode": "Coach", "event": "Simulation", "rating": result.get("tactical_rating")})
-    _log_event(db, player.id, "MATCH_COMPLETED", result, "coach", coach_session.id)
+    
+    match.summary_json = _json_dumps(result_json)
+    _append_session_history(player, {"mode": "Coach", "event": "Match Completed", "score": total_points})
+    _log_event(db, player.id, "MATCH_COMPLETED", result_json, "coach", coach_session.id)
+    _upsert_leaderboard(db, player.id, "Coach", total_points, manager_title)
     db.commit()
-    return {**result, "session_id": coach_session.id, "match_session_id": match.id}
+    
+    return {"session_id": coach_session.id, "status": "success", "manager_title": manager_title}
+
+@app.get("/api/v3/leaderboard/{mode}")
+def get_leaderboard(mode: str, db: Session = Depends(database.get_db)):
+    mode_cap = mode.capitalize()
+    if mode_cap not in {"Player", "Coach", "Fan"}:
+        raise HTTPException(status_code=400, detail="Invalid mode")
+    
+    entries = db.query(models.Leaderboard).filter_by(mode=mode_cap).order_by(models.Leaderboard.total_score.desc()).limit(100).all()
+    
+    result = []
+    for entry in entries:
+        player = db.get(models.Player, entry.player_id)
+        result.append({
+            "player_id": entry.player_id,
+            "name": player.name if player else "Unknown",
+            "score": entry.total_score,
+            "rank": entry.rank,
+            "title": entry.mode_title or _title_for_leaderboard(mode_cap, entry.total_score or 0),
+        })
+    return result
+
+@app.post("/api/v3/fan/start")
+def start_fan_game():
+    return fan_mode.start_fan_game()
+
+@app.post("/api/v3/fan/complete")
+def complete_fan_match(payload: Dict[str, Any], db: Session = Depends(database.get_db)):
+    player_id = _player_id_from(payload)
+    player = _get_or_create_player(db, player_id, _name_from(payload))
+    
+    try:
+        total_points = int(payload.get("total_points", 0))
+        completion_time = int(payload.get("completion_time", 120))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Fan score and completion time must be integers.") from exc
+    if not 0 <= total_points <= 40:
+        raise HTTPException(status_code=422, detail="Fan score must be between 0 and 40.")
+    if not 0 <= completion_time <= 120:
+        raise HTTPException(status_code=422, detail="Fan completion time must be between 0 and 120 seconds.")
+    title = str(payload.get("title") or _title_for_leaderboard("Fan", total_points))
+    
+    _append_session_history(player, {"mode": "Fan", "event": "Match Completed", "score": total_points, "title": title})
+    _log_event(db, player.id, "MATCH_COMPLETED", {"total_points": total_points, "time": completion_time}, "fan", None)
+    
+    _upsert_leaderboard(db, player.id, "Fan", total_points, title)
+    db.commit()
+    
+    return {"status": "success", "title": title}

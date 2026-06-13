@@ -9,17 +9,69 @@ from typing import Any, Dict, Iterable, List
 
 DATASET_URL = "https://www.kaggle.com/datasets/alessandrasala79/football-players-and-staff-faces-dataset"
 KNOWN_MATCH_ALIASES = {
-    "lionel messi": "Messi",
-    "messi": "Messi",
-    "cristiano ronaldo": "Ronaldo",
-    "ronaldo": "Ronaldo",
-    "kevin de bruyne": "De Bruyne",
-    "de bruyne": "De Bruyne",
-    "neymar": "Neymar",
-    "neymar jr": "Neymar",
-    "n'golo kante": "Kante",
-    "ngolo kante": "Kante",
-    "kante": "Kante",
+    # Forwards
+    "lionel messi": "Messi", "messi": "Messi",
+    "cristiano ronaldo": "Ronaldo", "ronaldo": "Ronaldo",
+    "kylian mbappe": "Mbappe", "mbappe": "Mbappe", "mbappé": "Mbappe",
+    "erling haaland": "Haaland", "haaland": "Haaland",
+    "neymar": "Neymar", "neymar jr": "Neymar",
+    "robert lewandowski": "Lewandowski", "lewandowski": "Lewandowski",
+    "luis suarez": "Suarez", "suarez": "Suarez", "suárez": "Suarez",
+    "karim benzema": "Benzema", "benzema": "Benzema",
+    "mohamed salah": "Salah", "salah": "Salah",
+    "son heung-min": "Son", "son": "Son", "heung-min son": "Son",
+    "antoine griezmann": "Griezmann", "griezmann": "Griezmann",
+    "vinicius jr": "Vinicius", "vinicius": "Vinicius", "vinícius": "Vinicius",
+    "lautaro martinez": "Lautaro", "lautaro": "Lautaro", "lautaro martínez": "Lautaro",
+    "marcus rashford": "Rashford", "rashford": "Rashford",
+    "bukayo saka": "Saka", "saka": "Saka",
+    # Legends (Forwards)
+    "pele": "Pele", "pelé": "Pele",
+    "diego maradona": "Maradona", "maradona": "Maradona",
+    "ronaldo nazario": "R9", "ronaldo nazário": "R9", "r9": "R9", "il fenomeno": "R9",
+    "ronaldinho": "Ronaldinho", "ronaldinho gaucho": "Ronaldinho",
+    "thierry henry": "Henry", "henry": "Henry",
+    "johan cruyff": "Cruyff", "cruyff": "Cruyff",
+    "eusebio": "Eusebio", "eusébio": "Eusebio",
+    "romario": "Romario", "romário": "Romario",
+    # Midfielders
+    "kevin de bruyne": "De Bruyne", "de bruyne": "De Bruyne",
+    "luka modric": "Modric", "modric": "Modric", "modrić": "Modric",
+    "toni kroos": "Kroos", "kroos": "Kroos",
+    "andres iniesta": "Iniesta", "iniesta": "Iniesta",
+    "xavi hernandez": "Xavi", "xavi": "Xavi",
+    "zinedine zidane": "Zidane", "zidane": "Zidane",
+    "andrea pirlo": "Pirlo", "pirlo": "Pirlo",
+    "paul pogba": "Pogba", "pogba": "Pogba",
+    "bruno fernandes": "Bruno", "bruno": "Bruno",
+    "pedri": "Pedri", "pedri gonzalez": "Pedri",
+    "jude bellingham": "Bellingham", "bellingham": "Bellingham",
+    "david beckham": "Beckham", "beckham": "Beckham",
+    "kaka": "Kaka", "kaká": "Kaka",
+    # Defensive Midfielders
+    "n'golo kante": "Kante", "ngolo kante": "Kante", "kante": "Kante", "kanté": "Kante",
+    "sergio busquets": "Busquets", "busquets": "Busquets",
+    "casemiro": "Casemiro",
+    "patrick vieira": "Vieira", "vieira": "Vieira",
+    "claude makelele": "Makelele", "makelele": "Makelele", "makélélé": "Makelele",
+    "declan rice": "Rice", "rice": "Rice",
+    # Defenders
+    "sergio ramos": "Ramos", "ramos": "Ramos",
+    "virgil van dijk": "Van Dijk", "van dijk": "Van Dijk",
+    "paolo maldini": "Maldini", "maldini": "Maldini",
+    "franz beckenbauer": "Beckenbauer", "beckenbauer": "Beckenbauer",
+    "thiago silva": "Thiago Silva",
+    "fabio cannavaro": "Cannavaro", "cannavaro": "Cannavaro",
+    "trent alexander-arnold": "TAA", "taa": "TAA", "alexander-arnold": "TAA",
+    "marcelo": "Marcelo", "marcelo vieira": "Marcelo",
+    "cafu": "Cafu",
+    "roberto carlos": "Roberto Carlos",
+    # Goalkeepers
+    "gianluigi buffon": "Buffon", "buffon": "Buffon",
+    "manuel neuer": "Neuer", "neuer": "Neuer",
+    "thibaut courtois": "Courtois", "courtois": "Courtois",
+    "alisson": "Alisson", "alisson becker": "Alisson",
+    "marc-andre ter stegen": "Ter Stegen", "ter stegen": "Ter Stegen",
 }
 
 
@@ -174,7 +226,8 @@ class FaceIdentityMatcher:
 
     def _normalize_match(self, candidate: Dict[str, Any]) -> str | None:
         explicit = candidate.get("primary_match")
-        if explicit in {"Messi", "Ronaldo", "De Bruyne", "Neymar", "Kante"}:
+        valid_keys = set(KNOWN_MATCH_ALIASES.values())
+        if explicit in valid_keys:
             return explicit
         name = str(candidate.get("name") or candidate.get("label") or "").strip().lower()
         return KNOWN_MATCH_ALIASES.get(name)

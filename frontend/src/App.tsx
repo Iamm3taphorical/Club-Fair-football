@@ -2,12 +2,17 @@ import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-route
 import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { api } from './api';
+import { initAudio, isMuted, playUiClick, setMuted as setGlobalMuted } from './audio';
 import CoachMode from './components/CoachMode';
+import FanMode from './components/FanMode';
 import FinalReport from './components/FinalReport';
 import IdentityScan from './components/IdentityScan';
 import PenaltyGame from './components/PenaltyGame';
+import Leaderboards from './components/Leaderboards';
 import type { CoachResult, DNAProfile, PlayerReport, UserProfile } from './types';
 import './App.css';
+import bracuLogo from './components/bracu_logo_12-0-2022.png';
+import buccLogo from './components/bucc_logoo.png';
 
 function readStored<T>(key: string, fallback: T): T {
   try {
@@ -27,6 +32,7 @@ export default function App() {
   const [dna, setDna] = useState<DNAProfile | null>(() => readStored<DNAProfile | null>('fv_dna', null));
   const [playerReport, setPlayerReport] = useState<PlayerReport | null>(() => readStored<PlayerReport | null>('fv_player_report', null));
   const [coachResult, setCoachResult] = useState<CoachResult | null>(() => readStored<CoachResult | null>('fv_coach_result', null));
+  const [muted, setMuted] = useState(isMuted);
 
   useEffect(() => {
     if (user) window.localStorage.setItem('fv_user', JSON.stringify(user));
@@ -34,6 +40,7 @@ export default function App() {
 
   useEffect(() => {
     if (!dna && isDNAProfile(user?.dna)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDna(user.dna);
     }
   }, [dna, user?.dna]);
@@ -50,6 +57,23 @@ export default function App() {
     if (coachResult) window.localStorage.setItem('fv_coach_result', JSON.stringify(coachResult));
   }, [coachResult]);
 
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('button')) {
+        initAudio();
+        playUiClick();
+      }
+    };
+    const handleMute = (event: Event) => setMuted(Boolean((event as CustomEvent<boolean>).detail));
+    document.addEventListener('click', handleClick, true);
+    window.addEventListener('fv-audio-muted', handleMute);
+    return () => {
+      document.removeEventListener('click', handleClick, true);
+      window.removeEventListener('fv-audio-muted', handleMute);
+    };
+  }, []);
+
   const resetExperience = () => {
     setUser(null);
     setDna(null);
@@ -65,6 +89,14 @@ export default function App() {
     <BrowserRouter>
       <div className="app-shell">
         <StadiumAtmosphere />
+        <button
+          className="global-mute"
+          type="button"
+          aria-pressed={muted}
+          onClick={() => setGlobalMuted(!muted)}
+        >
+          {muted ? 'Audio Off' : 'Audio On'}
+        </button>
         <Routes>
           <Route path="/" element={<Home user={user} setUser={setUser} setDna={setDna} />} />
           <Route path="/mode" element={<RequireUser user={user}><ModeSelection user={user} /></RequireUser>} />
@@ -83,6 +115,7 @@ export default function App() {
             }
           />
           <Route path="/coach" element={<RequireUser user={user}><CoachMode user={user} dna={dna} setCoachResult={setCoachResult} /></RequireUser>} />
+          <Route path="/fan" element={<RequireUser user={user}><FanMode user={user} /></RequireUser>} />
           <Route
             path="/report"
             element={
@@ -97,6 +130,7 @@ export default function App() {
               </RequireUser>
             }
           />
+          <Route path="/leaderboards" element={<Leaderboards user={user} />} />
           <Route path="*" element={<Navigate to={user ? '/mode' : '/'} replace />} />
         </Routes>
       </div>
@@ -122,7 +156,6 @@ function StadiumAtmosphere() {
       <div className="crowd-band crowd-band-one" />
       <div className="crowd-band crowd-band-two" />
       <div className="pitch-grid" />
-      <div className="rain-layer" />
     </div>
   );
 }
@@ -205,25 +238,64 @@ function Home({
 
 function ModeSelection({ user }: { user: UserProfile | null }) {
   const navigate = useNavigate();
+  const [showSplash, setShowSplash] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (showSplash) {
+    return (
+      <main className="mode-screen splash-screen relative">
+        <div className="splash-logos">
+          <img src={bracuLogo} alt="BRAC University" className="splash-logo" />
+          <div className="splash-divider" />
+          <img src={buccLogo} alt="BUCC" className="splash-logo" />
+        </div>
+        <div className="splash-ball-container">
+          <div className="splash-ball">⚽</div>
+          <div className="splash-trail"></div>
+        </div>
+        <h1 className="splash-text">GET READY</h1>
+        <div className="splash-footer">
+          <p>MADE WITH ENTHUSIASM BY BUCC HR</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="mode-screen">
       <header className="screen-header">
         <span className="broadcast-kicker">Tunnel Selection</span>
-        <h2>ARE YOU A</h2>
-        <p>{user?.name ?? 'FootballVerse Player'}</p>
+        <h2>{(user?.name ?? 'FootballVerse Player').toUpperCase()}, ARE YOU A</h2>
       </header>
 
-      <section className="mode-split">
-        <button className="mode-card player-card" type="button" onClick={() => navigate('/scan')}>
-          <span>PLAYER</span>
-          <strong>Identity scan and penalty arena</strong>
-          <div className="mode-visual attacking-lines" />
-        </button>
-        <button className="mode-card coach-card" type="button" onClick={() => navigate('/coach')}>
-          <span>COACH</span>
-          <strong>Tactical board and match simulation</strong>
-          <div className="mode-visual tactics-board" />
+      <section className="mode-triangle">
+        <div className="mode-row top-row">
+          <button className="mode-card player-card" type="button" onClick={() => navigate('/scan')}>
+            <span>PLAYER</span>
+            <strong>Identity scan and penalty arena</strong>
+          </button>
+          <button className="mode-card coach-card" type="button" onClick={() => navigate('/coach')}>
+            <span>COACH</span>
+            <strong>Tactical board and match simulation</strong>
+          </button>
+        </div>
+        <div className="mode-row bottom-row">
+          <button className="mode-card fan-card" type="button" onClick={() => navigate('/fan')}>
+            <span>FAN</span>
+            <strong>2-Min Trivia: Player, Coach, Stadium, Match</strong>
+          </button>
+        </div>
+      </section>
+
+      <section style={{ marginTop: '3rem', display: 'flex', justifyContent: 'center' }}>
+        <button className="secondary-action" type="button" onClick={() => navigate('/leaderboards')} style={{ padding: '1rem 3rem', fontSize: '1.1rem' }}>
+          🏆 View Global Leaderboards
         </button>
       </section>
     </main>

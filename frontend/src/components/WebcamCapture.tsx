@@ -46,13 +46,16 @@ export default function WebcamCapture({ onGestureTriggered }: { onGestureTrigger
         .catch((err) => console.error("Error accessing webcam:", err));
     }
 
+    const videoElement = videoRef.current;
+    
     return () => {
       if (ws.current) ws.current.close();
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
+      if (videoElement && videoElement.srcObject) {
+        const stream = videoElement.srcObject as MediaStream;
         stream.getTracks().forEach(track => track.stop());
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

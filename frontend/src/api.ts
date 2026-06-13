@@ -1,5 +1,4 @@
 import type {
-  CoachResult,
   CoachScenario,
   CoachTactics,
   DNAProfile,
@@ -65,6 +64,10 @@ async function getJSON<T>(path: string, timeoutMs = 3800): Promise<T> {
 export const api = {
   login(payload: { user_id: string; name: string }) {
     return postJSON<{ user: UserProfile }>('/api/v3/auth/login', payload);
+  },
+
+  getLeaderboard(mode: 'Player' | 'Coach' | 'Fan') {
+    return getJSON<Array<{ player_id: string; name: string; score: number; rank: string; title: string }>>(`/api/v3/leaderboard/${mode}`);
   },
 
   getUserHistory(userId: string) {
@@ -135,18 +138,56 @@ export const api = {
     return getJSON<PenaltySessionSnapshot>(`/api/v3/game/session/${sessionId}?user_id=${encodeURIComponent(userId)}`);
   },
 
-  getCoachScenario(payload: { coach_style: string }) {
+  getCoachScenario(payload: { segment: string; current_score: string; coach_style: string }) {
     return postJSON<CoachScenario>('/api/v3/coach/scenario', payload);
   },
 
-  simulateCoach(payload: {
+  simulateSegment(payload: {
     user_id: string;
     name: string;
-    coach_style: string;
     scenario: CoachScenario;
     tactics: CoachTactics;
-    dna?: DNAProfile['stats'];
+    dna?: Record<string, number>;
   }) {
-    return postJSON<CoachResult>('/api/v3/coach/simulate', payload, 5200);
+    return postJSON<{
+      new_score: string;
+      segment_goals_for: number;
+      segment_goals_against: number;
+      timeline: string[];
+      stats: { passes: number; shots: number; fouls: number; offsides: number };
+      segment_points: number;
+    }>('/api/v3/coach/simulate_segment', payload);
+  },
+
+  completeCoachMatch(payload: {
+    user_id: string;
+    name: string;
+    final_score: string;
+    total_points: number;
+    coach_style: string;
+    timeline: string[];
+  }) {
+    return postJSON<{ session_id: number; status: string; manager_title: string }>('/api/v3/coach/complete', payload, 5200);
+  },
+
+  startFanGame() {
+    return postJSON<{
+      challenges: Array<{
+        category: string;
+        clues: string[];
+        options: string[];
+        answer: string;
+      }>;
+    }>('/api/v3/fan/start', {});
+  },
+
+  completeFanGame(payload: {
+    user_id: string;
+    name: string;
+    total_points: number;
+    completion_time: number;
+    title: string;
+  }) {
+    return postJSON<{ status: string; title: string }>('/api/v3/fan/complete', payload);
   },
 };

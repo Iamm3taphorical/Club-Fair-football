@@ -955,3 +955,47 @@ That would align the V3 app with the local vision document without rewriting the
 ## Final Recommendation
 
 Treat the V3 React + FastAPI app as the product target. Treat the Streamlit app as a feature reference and fallback demo only. The project already has enough core logic to become competition-ready quickly, but the missing V3 leaderboard, rewards, demo mode, full report persistence, dependency setup, and database migration path should be addressed before adding more gameplay complexity.
+
+## Continuation Log - 2026-06-12
+
+This section was added after resuming from a previous model/token-limit handoff. The worktree already contained substantial prior edits beyond the original audit, including V3 Fan Mode, Leaderboards, audio helpers, Player Arena CV changes, Coach Mode segment simulation, and updated backend endpoints. Those prior edits were preserved.
+
+### Fixes Applied In This Continuation
+
+| ID | Location | Severity | Nature | Reproduction | Fix Applied |
+| --- | --- | --- | --- | --- | --- |
+| A1-CV-Release | `backend/cv_engine.py`, `GestureRecognizer.process_frame` | Critical | Fist release state machine bug. The backend emitted `Charging` frames but did not persist that a fist was active, so the next non-fist frame could fail to emit `Fist Released`. | Hold a closed fist, then open/release. Power may charge but shot release does not dispatch reliably. | Set `self.last_gesture = "Charging"` before returning the charging response, allowing the release branch to fire on the next non-fist frame. |
+| D1-DNA-Persist | `backend/main.py`, `_upsert_dna` | High | DNA profile persistence regression. The ORM DNA row was updated, but `players.football_dna_json` was not refreshed, causing profile reloads to lose current DNA data. | Complete identity scan, reload/login later, inspect returned user profile DNA. | Restored `player.football_dna_json = _json_dumps(profile)` inside `_upsert_dna`. |
+| A8-Leaderboard-BestScore | `backend/main.py`, `_upsert_leaderboard` | High | Lower later scores could overwrite/downgrade a leaderboard title even though the stored score kept the max. | Post a high score, then post a lower score for the same player/mode. | Preserve the previous best score and only update custom title when the new score is at least the prior best; fill missing title from thresholds if needed. |
+| A8-Leaderboard-Top100 | `backend/main.py`, `_upsert_leaderboard` | Medium | API limited reads to 100, but did not enforce the top-100 cap server-side in storage. | Insert more than 100 leaderboard rows for one mode. | After reranking each mode, delete entries after index 100 before commit. |
+| A6-Coach-Title | `backend/main.py`, `complete_coach_match`; `frontend/src/api.ts`; `frontend/src/types.ts`; `frontend/src/components/CoachMode.tsx`; `frontend/src/components/FinalReport.tsx` | Medium | Manager title was stored backend-side but not returned/displayed consistently in the frontend report. | Complete Coach Mode and view final report. | Return `manager_title` from `/api/v3/coach/complete`, type it in the API/client model, persist it in `CoachResult`, and display it in `FinalReport`. |
+| A5/A6-Coach-HT-Timer | `frontend/src/components/CoachMode.tsx` | High | Half-time could be skipped early with "Ready for Second Half", violating the 60-second blocking requirement. Segment display also counted half-time as a match segment. | Reach half-time and click the ready button immediately; observe second half starts before timer ends. | Removed early progression button, added lock message, and changed segment header to show six playable 15-minute segments rather than seven including HT. |
+| D7-Fan-Error-State | `frontend/src/components/FanMode.tsx`; `frontend/src/App.css` | Medium | Fan Mode start failure could leave the app stuck on a loading screen or render `null` for a missing challenge. | Stop backend or make `/api/v3/fan/start` fail, then open Fan Trivia. | Added human-readable load error, retry/back actions, challenge restart fallback, and styles. |
+| D6-Frontend-Lint | `frontend/src/components/FanMode.tsx` | Low | Initial Fan Mode loader called a state-setting helper synchronously inside `useEffect`, failing `react-hooks/set-state-in-effect`. | Run `npm run lint`. | Split initial async fetch from manual retry path and moved mount-time state updates into promise callbacks. |
+| A8-Leaderboard-Tests | `tests/test_v3_leaderboard.py` | Low | Leaderboard fixes had no focused regression tests. | Change `_upsert_leaderboard` behavior and run backend tests. | Added tests for best-score/title preservation and top-100 mode trimming. |
+
+### Verification Run
+
+- `npm run build` in `frontend/`: passed.
+- `npm run lint` in `frontend/`: passed.
+- `.venv/bin/python -m unittest discover -s tests -p 'test*.py'`: passed, 62 tests.
+- `.venv/bin/python -m pytest -q`: not run because `pytest` is not installed in the virtualenv.
+- Local smoke check: FastAPI started on `http://127.0.0.1:8001`; Vite started on `http://127.0.0.1:5174` using ignored `frontend/.env.local` with `VITE_API_BASE_URL=http://127.0.0.1:8001`. `GET /`, `GET /api/v3/leaderboard/Player`, and `GET /api/v3/identity/config` responded.
+
+### Current A-Section Status Snapshot
+
+- A1 Computer Vision: partially fixed and verified by static code/tests. Mirrored display-space mapping, pointer/debug payloads, fist classification tests, and release dispatch path exist. Still needs live webcam validation in browser.
+- A2 Shooting Logic: backend shot outcome and frontend visual zones use the same target labels. No new code change in this continuation except preserving prior work. Still needs browser animation validation.
+- A3 Audio: Web Audio/TTS system exists in `frontend/src/audio.ts` with global mute and cues. Still needs live browser permission/autoplay validation.
+- A4 Buttons: no exhaustive browser click pass completed in this continuation. Static pass found and fixed Fan Mode error/retry controls and Coach half-time progression.
+- A5 Coach Half-Time: fixed blocking timer issue; existing half-time roster, stamina bars, substitutions, and draggable pitch remain.
+- A6 Coach 90 Minutes: six playable segments plus HT are represented; final completion endpoint saves result and leaderboard title. Segment display fixed. Still needs browser end-to-end playthrough.
+- A7 Fan Trivia: 120-second wall-clock timer and four categories exist. Difficulty data exists but should still be content-reviewed for obscurity.
+- A8 Leaderboard: V3 API and UI exist, independent mode filter exists, score/title/rank behavior tightened, and top-100 storage cap added.
+
+### Remaining Highest-Value Next Steps
+
+1. Run a live browser QA pass with backend and frontend servers active: camera permission, fist charge/release, shot result animation, Coach Mode full 90-minute flow, Fan Mode timer expiry, all leaderboard tabs.
+2. Install or add `pytest` to the project dependency setup, then run `backend/test_main.py` and any pytest-style tests.
+3. Add a focused CV state-machine unit test for fist charge-to-release once the recognizer frame processing is easier to inject/mocking-friendly.
+4. Replace inline styles in the newer Coach/Fan UI where practical and continue mobile overflow checks at 360px width.

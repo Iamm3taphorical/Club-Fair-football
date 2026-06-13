@@ -154,4 +154,5 @@ class Leaderboard(Base):
     total_score = Column(Integer, index=True)
     rank = Column(String)
     mode = Column(String) # 'Player', 'Coach'
+    mode_title = Column(String)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

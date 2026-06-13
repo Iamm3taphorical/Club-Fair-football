@@ -86,6 +86,131 @@ function readInitialPenaltySession(userId?: string): InitialPenaltySession {
   };
 }
 
+
+// ─── SVG Goalkeeper figure ───────────────────────────────────────────────────
+// Zones: center | left-low | right-low | top-right | right-high | center-low
+function GoalkeeperSVG({ zone }: { zone: string }) {
+  const diving = zone !== 'center';
+  const diveLeft = zone === 'left-low';
+  const diveRight = zone === 'right-low' || zone === 'right-high';
+  const diveUp = zone === 'top-right' || zone === 'right-high';
+
+  // Arm spread: wider when diving, tilted toward the dive direction
+  const leftArmEnd  = diveLeft  ? { x: -30, y: 18 } :
+                      diveRight ? { x: -14, y: 32 } :
+                      diveUp    ? { x: -28, y: 8  } :
+                                  { x: -28, y: 22 };
+  const rightArmEnd = diveRight ? { x: 30, y: 18 } :
+                      diveLeft  ? { x: 14, y: 32 } :
+                      diveUp    ? { x: 28, y: 8  } :
+                                  { x: 28, y: 22 };
+
+  // Leg spread: knee bend angle changes per dive
+  const leftKneeX  = diveLeft  ? -18 : diveRight ? -8 : -12;
+  const rightKneeX = diveRight ?  18 : diveLeft  ?  8 :  12;
+  const legBaseY   = diving    ? 60  : 62;
+
+  const skinColor   = '#ffd24d';
+  const kitColor    = '#2a9d8f';
+  const kitAccent   = '#70e2ff';
+  const gloveColor  = '#ff5b5b';
+  const bootColor   = '#1a1a2e';
+
+  return (
+    <svg
+      className="keeper-svg"
+      viewBox="-40 -5 80 95"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-label="Goalkeeper"
+    >
+      {/* ─ Glow filter ─ */}
+      <defs>
+        <filter id="kp-glow" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="2.5" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <radialGradient id="kp-kit" cx="50%" cy="30%" r="60%">
+          <stop offset="0%" stopColor={kitAccent} stopOpacity="0.35" />
+          <stop offset="100%" stopColor={kitColor} />
+        </radialGradient>
+      </defs>
+
+      {/* ─ Shadow on ground ─ */}
+      <ellipse cx="0" cy="88" rx="22" ry="4" fill="rgba(0,0,0,0.28)" />
+
+      {/* ─ Left boot ─ */}
+      <rect
+        x={leftKneeX - 4}
+        y={legBaseY + 16}
+        width="10"
+        height="6"
+        rx="3"
+        fill={bootColor}
+      />
+      {/* ─ Right boot ─ */}
+      <rect
+        x={rightKneeX - 4}
+        y={legBaseY + 16}
+        width="10"
+        height="6"
+        rx="3"
+        fill={bootColor}
+      />
+
+      {/* ─ Left leg (thigh + shin) ─ */}
+      <line x1="-6" y1="48" x2={leftKneeX} y2={legBaseY} stroke={kitColor} strokeWidth="7" strokeLinecap="round" />
+      <line x1={leftKneeX} y1={legBaseY} x2={leftKneeX - 2} y2={legBaseY + 18} stroke={kitColor} strokeWidth="6" strokeLinecap="round" />
+
+      {/* ─ Right leg (thigh + shin) ─ */}
+      <line x1="6" y1="48" x2={rightKneeX} y2={legBaseY} stroke={kitColor} strokeWidth="7" strokeLinecap="round" />
+      <line x1={rightKneeX} y1={legBaseY} x2={rightKneeX + 2} y2={legBaseY + 18} stroke={kitColor} strokeWidth="6" strokeLinecap="round" />
+
+      {/* ─ Kit body (torso) ─ */}
+      <rect
+        x="-12"
+        y="20"
+        width="24"
+        height="30"
+        rx="5"
+        fill="url(#kp-kit)"
+        filter="url(#kp-glow)"
+      />
+      {/* kit number accent stripe */}
+      <rect x="-12" y="28" width="24" height="3" rx="1.5" fill={kitAccent} opacity="0.55" />
+      <text x="0" y="42" textAnchor="middle" fontSize="8" fontWeight="900" fill="#f5f8ff" opacity="0.82">GK</text>
+
+      {/* ─ Left arm ─ */}
+      <line x1="-11" y1="24" x2={leftArmEnd.x} y2={leftArmEnd.y} stroke={kitColor} strokeWidth="6" strokeLinecap="round" />
+      {/* Left glove */}
+      <circle cx={leftArmEnd.x} cy={leftArmEnd.y} r="5" fill={gloveColor} />
+
+      {/* ─ Right arm ─ */}
+      <line x1="11" y1="24" x2={rightArmEnd.x} y2={rightArmEnd.y} stroke={kitColor} strokeWidth="6" strokeLinecap="round" />
+      {/* Right glove */}
+      <circle cx={rightArmEnd.x} cy={rightArmEnd.y} r="5" fill={gloveColor} />
+
+      {/* ─ Neck ─ */}
+      <rect x="-4" y="10" width="8" height="12" rx="4" fill={skinColor} />
+
+      {/* ─ Head ─ */}
+      <circle cx="0" cy="6" r="11" fill={skinColor} filter="url(#kp-glow)" />
+      {/* Eyes */}
+      <circle cx="-4" cy="5" r="2" fill="#1a1a2e" />
+      <circle cx="4"  cy="5" r="2" fill="#1a1a2e" />
+      {/* Pupils gleam */}
+      <circle cx="-3.2" cy="4.2" r="0.7" fill="#fff" />
+      <circle cx="4.8"  cy="4.2" r="0.7" fill="#fff" />
+      {/* Keeper cap brim */}
+      <path d="M-11 2 Q0 -8 11 2" stroke={kitAccent} strokeWidth="3.5" fill="none" strokeLinecap="round" />
+      {/* Mouth – determined grin */}
+      <path d="M-4 10 Q0 13 4 10" stroke="#1a1a2e" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export default function PenaltyGame({
   user,
   dna,
@@ -616,7 +741,9 @@ export default function PenaltyGame({
           <div className="crowd-rings" />
           <div className="goal-mouth">
             <div className="net-grid" />
-            <div className={`keeper keeper-${keeperZone}`} />
+          <div className={`keeper keeper-${keeperZone}`}>
+            <GoalkeeperSVG zone={keeperZone} />
+          </div>
             {ballPos ? <div className="match-ball physics-ball" style={{ top: ballPos.top, left: ballPos.left }} /> : null}
             <div className="goal-frame" />
           </div>

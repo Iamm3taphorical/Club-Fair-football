@@ -156,7 +156,7 @@ export const api = {
       timeline: string[];
       stats: { passes: number; shots: number; fouls: number; offsides: number };
       segment_points: number;
-    }>('/api/v3/coach/simulate_segment', payload);
+    }>('/api/v3/coach/simulate_segment', payload, 8000);
   },
 
   completeCoachMatch(payload: {

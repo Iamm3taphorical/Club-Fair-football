@@ -42,7 +42,7 @@ export function initAudio() {
   // Unlock Speech Synthesis during the first user interaction
   try {
     if (window.speechSynthesis && !muted) {
-      const unlockUtterance = new SpeechSynthesisUtterance('');
+      const unlockUtterance = new SpeechSynthesisUtterance(' ');
       unlockUtterance.volume = 0;
       window.speechSynthesis.speak(unlockUtterance);
     }
@@ -138,23 +138,26 @@ export function speakCommentary(text: string) {
   try {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.05;
-    utterance.pitch = 1.05;
-    utterance.volume = 1.0;
-    const voices = window.speechSynthesis.getVoices();
-    const voice = voices.find((item) => item.lang.startsWith('en'));
-    if (voice) utterance.voice = voice;
     
-    // Prevent garbage collection bug in Chrome
-    (window as any).__fv_utterance = utterance;
-    
-    window.speechSynthesis.speak(utterance);
-    
-    // Fix for Chrome occasionally getting stuck in paused state
-    if (window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-    }
+    setTimeout(() => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.05;
+      utterance.pitch = 1.05;
+      utterance.volume = 1.0;
+      const voices = window.speechSynthesis.getVoices();
+      const voice = voices.find((item) => item.lang.startsWith('en'));
+      if (voice) utterance.voice = voice;
+      
+      // Prevent garbage collection bug in Chrome
+      (window as any).__fv_utterance = utterance;
+      
+      window.speechSynthesis.speak(utterance);
+      
+      // Fix for Chrome occasionally getting stuck in paused state
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+    }, 50);
   } catch {
     // Speech synthesis is optional.
   }

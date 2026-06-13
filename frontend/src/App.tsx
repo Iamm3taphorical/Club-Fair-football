@@ -9,6 +9,7 @@ import FinalReport from './components/FinalReport';
 import IdentityScan from './components/IdentityScan';
 import PenaltyGame from './components/PenaltyGame';
 import Leaderboards from './components/Leaderboards';
+import Contributors from './components/Contributors';
 import type { CoachResult, DNAProfile, PlayerReport, UserProfile } from './types';
 import './App.css';
 import bracuLogo from './components/bracu_logo_12-0-2022.png';
@@ -131,6 +132,7 @@ export default function App() {
             }
           />
           <Route path="/leaderboards" element={<Leaderboards user={user} />} />
+          <Route path="/contributors" element={<Contributors />} />
           <Route path="*" element={<Navigate to={user ? '/mode' : '/'} replace />} />
         </Routes>
       </div>
@@ -293,9 +295,12 @@ function ModeSelection({ user }: { user: UserProfile | null }) {
         </div>
       </section>
 
-      <section style={{ marginTop: '3rem', display: 'flex', justifyContent: 'center' }}>
+      <section style={{ marginTop: '3rem', display: 'flex', gap: '1rem', justifyContent: 'center' }}>
         <button className="secondary-action" type="button" onClick={() => navigate('/leaderboards')} style={{ padding: '1rem 3rem', fontSize: '1.1rem' }}>
           🏆 View Global Leaderboards
+        </button>
+        <button className="secondary-action" type="button" onClick={() => navigate('/contributors')} style={{ padding: '1rem 3rem', fontSize: '1.1rem' }}>
+          🤝 Contributors
         </button>
       </section>
     </main>

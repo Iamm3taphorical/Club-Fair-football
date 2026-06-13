@@ -20,7 +20,10 @@ try:
     import mediapipe as mp
     from mediapipe.tasks import python as mp_python
     from mediapipe.tasks.python import vision as mp_vision
-    import tensorflow as tf
+    try:
+        import tensorflow as tf
+    except ImportError:
+        tf = None
     _CV_AVAILABLE = True
 except Exception as exc:  # Optional integration for laptops without CV deps.
     cv2 = None

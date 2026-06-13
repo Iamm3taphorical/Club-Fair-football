@@ -61,7 +61,21 @@ class MatchSimulationEngine:
         """
         timeline = []
         segment = scenario.get("segment", "0-15")
-        start_min, end_min = map(int, segment.split('-'))
+
+        # Guard against non-numeric segments like 'HT'
+        try:
+            parts = segment.split('-')
+            start_min, end_min = int(parts[0]), int(parts[1])
+        except (ValueError, IndexError):
+            current = scenario.get("current_score", "0-0")
+            return {
+                "new_score": current,
+                "segment_goals_for": 0,
+                "segment_goals_against": 0,
+                "timeline": [f"Half-time break. Score remains {current}."],
+                "stats": {"passes": 0, "shots": 0, "fouls": 0, "offsides": 0},
+                "segment_points": 0,
+            }
         
         attack_power = user_tactics.get("attack", 50) + (coach_dna.get("vision", 70) * 0.2)
         defense_power = user_tactics.get("defense", 50) + (coach_dna.get("leadership", 70) * 0.2)

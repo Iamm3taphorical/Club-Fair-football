@@ -47,7 +47,7 @@ export default function FinalReport({
     try {
       if (navigator.share) {
         await navigator.share({
-          title: report?.shareable_card?.title ?? 'Coach Mode Report',
+          title: report.shareable_card.title,
           text: shareText,
         });
         setShareStatus('Shared');

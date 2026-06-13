@@ -145,6 +145,7 @@ export default function CoachMode({
   const [matchStats, setMatchStats] = useState({ passes: 0, shots: 0, fouls: 0, offsides: 0 });
   const [scenario, setScenario] = useState<CoachScenario | null>(null);
   const [simulating, setSimulating] = useState(false);
+  const [simulateError, setSimulateError] = useState<string | null>(null);
   const [htTimer, setHtTimer] = useState<number | null>(null);
   
   // Tactical State
@@ -254,6 +255,7 @@ export default function CoachMode({
   const handleSimulateSegment = async () => {
     if (!scenario || simulating) return;
     setSimulating(true);
+    setSimulateError(null);
     
     try {
       const response = await api.simulateSegment({
@@ -303,6 +305,9 @@ export default function CoachMode({
         setCoachResult({ ...finalResult, session_id: completed.session_id, manager_title: completed.manager_title });
         navigate('/report');
       }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to simulate segment. Please try again.';
+      setSimulateError(message);
     } finally {
       setSimulating(false);
     }
@@ -446,6 +451,12 @@ export default function CoachMode({
           <TacticSlider label="Pressure" value={tactics.pressure} onChange={(value) => updateNumber('pressure', value)} />
           <TacticSlider label="Width" value={tactics.width} onChange={(value) => updateNumber('width', value)} />
 
+          {simulateError ? (
+            <div style={{ padding: '0.75rem 1rem', background: 'rgba(255,91,91,0.15)', border: '1px solid #ff5b5b', borderRadius: '8px', color: '#ff5b5b', fontSize: '0.85rem' }}>
+              ⚠️ {simulateError}
+            </div>
+          ) : null}
+
           <button className="primary-action" type="button" onClick={() => void handleSimulateSegment()} disabled={simulating}>
             {simulating ? 'Simulating Segment...' : 'Simulate Segment'}
           </button>
@@ -509,6 +520,32 @@ export default function CoachMode({
               </button>
             </div>
           </div>
+          {/* ── Live Match Timeline ── */}
+          {fullTimeline.length > 0 && (
+            <div style={{ marginTop: '1rem', background: 'rgba(0,0,0,0.55)', border: '1px solid rgba(112,226,255,0.18)', borderRadius: '1rem', padding: '1rem' }}>
+              <h4 style={{ margin: '0 0 0.75rem', color: '#70e2ff', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.1rem' }}>Match Timeline</h4>
+              <div style={{ display: 'grid', gap: '0.45rem', maxHeight: '14rem', overflowY: 'auto' }}>
+                {[...fullTimeline].reverse().map((event, idx) => (
+                  <div key={idx} style={{
+                    fontSize: '0.82rem',
+                    padding: '0.4rem 0.65rem',
+                    borderRadius: '6px',
+                    borderLeft: `3px solid ${event.includes('GOAL!') ? '#70e2ff' : event.includes('conceded') ? '#ff5b5b' : 'rgba(255,255,255,0.2)'}`,
+                    background: event.includes('GOAL!') ? 'rgba(112,226,255,0.08)' : event.includes('conceded') ? 'rgba(255,91,91,0.08)' : 'rgba(255,255,255,0.04)',
+                    color: event.includes('GOAL!') ? '#70e2ff' : event.includes('conceded') ? '#ff8080' : '#dce7f7',
+                  }}>
+                    {event}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '0.78rem', color: '#aab8cc' }}>
+                <span>Passes <strong style={{ color: '#f5f8ff' }}>{matchStats.passes}</strong></span>
+                <span>Shots <strong style={{ color: '#f5f8ff' }}>{matchStats.shots}</strong></span>
+                <span>Fouls <strong style={{ color: '#f5f8ff' }}>{matchStats.fouls}</strong></span>
+                <span>Points <strong style={{ color: '#ffd24d' }}>{totalPoints}</strong></span>
+              </div>
+            </div>
+          )}
         </section>
       </section>
     </main>

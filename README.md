@@ -3,6 +3,7 @@
 ![React](https://img.shields.io/badge/Frontend-React-blue?logo=react)
 ![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)
 ![Python](https://img.shields.io/badge/Python-3.x-yellow?logo=python)
+
 **FootballVerse AI** is a next-generation, AI-driven football gaming ecosystem designed to test a user's physical reflexes, tactical intelligence, and historical knowledge of the beautiful game. 
 Built with a modern React frontend and a powerful FastAPI backend, the platform features real-time computer vision, complex match simulation engines, and global leaderboards made by three football fanatics from Human Resources Department of BRAC University Computer Club. 
 
